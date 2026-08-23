@@ -1,0 +1,8 @@
+{
+  "name": "Remix AI Creator Studio",
+  "description": "A modular SaaS platform featuring advanced AI tools, starting with Image-to-Video generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

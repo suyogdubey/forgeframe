@@ -9,7 +9,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="darkreader-lock" content="true" />
+      </head>
       <body className="antialiased bg-[#09090b] text-zinc-300 selection:bg-indigo-500/30" suppressHydrationWarning>
         <AppLayout>{children}</AppLayout>
       </body>

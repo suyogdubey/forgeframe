@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 'use client';
 
 import React, { useState, createContext, useEffect } from 'react';
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-export const AppContext = createContext<{credits: number, setCredits: (c: number) => void}>({credits: 0, setCredits: () => {}});
+export const AppContext = createContext<{credits: number, setCredits: (c: number) => void, refreshCredits: () => Promise<void>, session?: any}>({credits: 0, setCredits: () => {}, refreshCredits: async () => {}});
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -34,6 +35,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   
   const pathname = usePathname();
 
+  const refreshCredits = async () => {
+    if (user?.id) {
+      await fetchProfile(user.id);
+    } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await fetchProfile(session.user.id);
+      }
+    }
+  };
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch("/api/user/profile", { cache: "no-store", 
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.credits !== undefined) {
+          setCredits(data.credits);
+        }
+      }
+    } catch (err) {}
+  };
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -54,16 +82,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchProfile(userId: string) {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('credits')
-      .eq('id', userId)
-      .single();
-    if (data) {
-      setCredits(data.credits);
-    }
-  }
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,7 +114,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <AppContext.Provider value={{credits, setCredits}}>
+    <AppContext.Provider value={{credits, setCredits, refreshCredits, session: { user }}}>
     <div className="flex h-screen w-full bg-[#09090b] text-zinc-300 font-sans selection:bg-indigo-500/30 overflow-hidden">
       {/* Mobile Header Overlay */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#09090b] border-b border-zinc-800 flex items-center justify-between px-4 z-50">

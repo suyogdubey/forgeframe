@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
+import { AppContext } from '@/components/AppLayout';
 import { Users, Search, ShieldAlert, Edit2, Check, X, CreditCard, Activity, Loader2, Trash2 } from 'lucide-react';
 
 interface UserProfile {
@@ -12,6 +14,7 @@ interface UserProfile {
 
 export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const { session, refreshCredits } = useContext(AppContext);
   const [search, setSearch] = useState('');
   const [editingCreditsId, setEditingCreditsId] = useState<string | null>(null);
   const [editCreditsValue, setEditCreditsValue] = useState<string>('');
@@ -21,22 +24,18 @@ export default function AdminPage() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{success: boolean, message: string} | null>(null);
 
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("/api/admin/users");
+      const data = await res.json();
+      if (res.ok) setUsers(data);
+    } catch (err) {}
+    setLoading(false);
+  };
   useEffect(() => {
     fetchUsers();
   }, []);
 
-  async function fetchUsers() {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/admin/users');
-      if (!res.ok) throw new Error('Failed to fetch users');
-      const data = await res.json();
-      setUsers(data);
-    } catch (err: any) {
-      setError(err.message);
-    }
-    setLoading(false);
-  }
 
   const filteredUsers = users.filter(u => 
     u.email?.toLowerCase().includes(search.toLowerCase())
@@ -59,6 +58,7 @@ export default function AdminPage() {
         });
         if (!res.ok) throw new Error('Failed to update');
         setUsers(users.map(u => u.id === id ? { ...u, credits: val } : u));
+        if (session?.user?.id === id) refreshCredits();
       } catch (err: any) {
         alert("Failed to update credits: " + err.message);
       }

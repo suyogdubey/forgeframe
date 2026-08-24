@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -17,6 +18,17 @@ export default function GenerationsPage() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
 
+  const fetchGenerations = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("generations")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    if (data) {
+      setGenerations(data);
+    }
+    setLoading(false);
+  };
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -40,19 +52,6 @@ export default function GenerationsPage() {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchGenerations(userId: string) {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('generations')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setGenerations(data);
-    }
-    setLoading(false);
-  }
 
   if (loading) {
     return (

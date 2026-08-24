@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { UploadCloud, Play, Settings2, Loader2, Sparkles, TerminalSquare, RefreshCw, ChevronDown, ChevronUp, Download, Maximize, ShieldAlert, X } from 'lucide-react';
+import { UploadCloud, Play, Settings2, Loader2, Sparkles, TerminalSquare, RefreshCw, ChevronDown, ChevronUp, Download, Maximize, ShieldAlert, X , Info } from 'lucide-react';
 import { AppContext } from '@/components/AppLayout';
 import { supabase } from '@/lib/supabase';
 
 const CHINESE_NEG_PROMPT = "色调艳丽, 过曝, 静态, 细节模糊不清, 字幕, 风格, 作品, 画作, 画面, 静止, 整体发灰, 最差质量, 低质量, JPEG压缩残留, 丑陋的, 残缺的, 多余的手指, 画得不好的手指, 画得不好的脸部, 畸形的, 毁容的, 形态畸形的肢体, 手指融合, 静止不动的画面, 杂乱的背景, 三条腿, 背景人很多, 倒着走";
 
 export default function WorkspacePage() {
-  const { credits, setCredits } = useContext(AppContext);
+  const { credits, refreshCredits } = useContext(AppContext);
   
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState(CHINESE_NEG_PROMPT);
@@ -26,6 +26,7 @@ export default function WorkspacePage() {
   const [imageBase64, setImageBase64] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const [jobStatus, setJobStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
   const [logs, setLogs] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -78,6 +79,21 @@ export default function WorkspacePage() {
       const sep = prev.length > 0 && !prev.endsWith(',') && !prev.endsWith(' ') ? ', ' : '';
       return prev + sep + tag;
     });
+  };
+
+  const enhancePrompt = async () => {
+    if (!prompt.trim()) return;
+    setIsEnhancing(true);
+    try {
+      const res = await fetch('/api/enhance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, type: 'video' })
+      });
+      const data = await res.json();
+      if (data.enhancedPrompt) setPrompt(data.enhancedPrompt);
+    } catch (err) {}
+    setIsEnhancing(false);
   };
 
   const handleGenerate = async () => {
@@ -136,7 +152,7 @@ export default function WorkspacePage() {
       setVideoUrl(data.video_url);
       setJobStatus('done');
       addLog('Video generation completed successfully.');
-      setCredits(credits - 5);
+      refreshCredits();
     } catch (error: any) {
       addLog(`Error: ${error.message}`);
       if (error.message.includes('exhausted') || error.message.includes('429')) {
@@ -238,6 +254,17 @@ export default function WorkspacePage() {
           {/* Prompt */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Prompt</label>
+            <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+              <button 
+                onClick={enhancePrompt} 
+                disabled={isEnhancing || !prompt.trim()}
+                className="text-xs font-medium bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 px-2 py-1 rounded flex items-center gap-1 transition-colors disabled:opacity-50"
+              >
+                {isEnhancing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                Enhance
+              </button>
+              
+            </div>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}

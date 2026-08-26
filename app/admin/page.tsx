@@ -14,7 +14,7 @@ interface UserProfile {
 
 export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const { session, refreshCredits } = useContext(AppContext);
+  const { user, fetchCredits } = useContext(AppContext);
   const [search, setSearch] = useState('');
   const [editingCreditsId, setEditingCreditsId] = useState<string | null>(null);
   const [editCreditsValue, setEditCreditsValue] = useState<string>('');
@@ -58,7 +58,7 @@ export default function AdminPage() {
         });
         if (!res.ok) throw new Error('Failed to update');
         setUsers(users.map(u => u.id === id ? { ...u, credits: val } : u));
-        if (session?.user?.id === id) refreshCredits();
+        if (user?.id === id) fetchCredits(id);
       } catch (err: any) {
         alert("Failed to update credits: " + err.message);
       }

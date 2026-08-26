@@ -1,4 +1,8 @@
+const fs = require('fs');
+let code = fs.readFileSync('app/api/generate/route.ts', 'utf-8');
 
+// We rewrite the file because it's easier.
+const newCode = `
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,7 +19,7 @@ export async function POST(req: NextRequest) {
     
     // Create a user client to verify token and fetch user details
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } }
+      global: { headers: { Authorization: \`Bearer \${token}\` } }
     });
     // Create an admin client for bypassing RLS on storage & DB
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -28,7 +32,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const prompt = body.prompt || '';
     
-    const { data: profile, error: profileError } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseUser
       .from('user_profiles')
       .select('credits')
       .eq('id', user.id)
@@ -68,32 +72,17 @@ export async function POST(req: NextRequest) {
           });
           
           if (!response.ok) {
-            console.error(`Modal backend error: ${response.status}`);
+            console.error(\`Modal backend error: \${response.status}\`);
             // Refund credits if generation failed at Modal side
             await supabaseAdmin.from('user_profiles').update({ credits: profile.credits }).eq('id', user.id);
             return;
           }
-          
-          const responseContentType = response.headers.get('Content-Type') || '';
-          if (responseContentType.includes('application/json')) {
-            const data = await response.json();
-            if (data.video_url || data.videoUrl) {
-              const url = data.video_url || data.videoUrl;
-              await supabaseAdmin.from('generations').insert({
-                user_id: user.id,
-                prompt: prompt,
-                video_url: url
-              });
-              return;
-            }
-          }
-          
           videoBuffer = await response.arrayBuffer();
-          contentType = responseContentType || 'video/mp4';
+          contentType = response.headers.get('Content-Type') || 'video/mp4';
         }
         
         let videoUrl = '';
-        const fileName = `${user.id}/${Date.now()}.mp4`;
+        const fileName = \`\${user.id}/\${Date.now()}.mp4\`;
         const { data: uploadData, error: uploadError } = await supabaseAdmin
           .storage
           .from('videos')
@@ -129,3 +118,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message || 'Generation failed' }, { status: 500 });
   }
 }
+`;
+
+fs.writeFileSync('app/api/generate/route.ts', newCode);

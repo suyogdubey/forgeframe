@@ -9,7 +9,6 @@ export async function GET(req: NextRequest) {
     
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await admin.auth.getUser(token);
     
@@ -17,13 +16,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const { data, error } = await admin
+    let { data, error } = await admin
       .from('user_profiles')
       .select('credits')
       .eq('id', user.id)
       .single();
 
-    if (error) throw error;
+    if (error && error.code === 'PGRST116') {
+      const { data: newProfile, error: insertError } = await admin
+        .from('user_profiles')
+        .insert({ id: user.id, email: user.email, credits: 50, role: 'user' })
+        .select('credits')
+        .single();
+      
+      if (insertError) throw insertError;
+      data = newProfile;
+    } else if (error) {
+      throw error;
+    }
     
     return NextResponse.json(data);
   } catch (error: any) {

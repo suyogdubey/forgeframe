@@ -1,140 +1,107 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 'use client';
-
-import React, { useState, createContext, useEffect } from 'react';
+import React, { useState, useEffect, createContext } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  Video, 
-  Type, 
-  Mic, 
-  ShieldAlert,
-  ChevronLeft,
-  ChevronRight,
-  Menu,
-  Coins,
-  Layers,
-  Film,
-  Image as ImageIcon
-} from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+import { Menu, X, Image as ImageIcon, Video, Layers, Wand2, User, ChevronLeft, ChevronRight, ShieldAlert, Coins, History } from 'lucide-react';
 
-export const AppContext = createContext<{credits: number, setCredits: (c: number) => void, refreshCredits: () => Promise<void>, session?: any}>({credits: 0, setCredits: () => {}, refreshCredits: async () => {}});
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock'
+);
+
+export const AppContext = createContext<any>(null);
+
+const navItems = [
+  { name: 'Image to Video', href: '/', icon: Video },
+  { name: 'My Generations', href: '/generations', icon: History },
+  { name: 'Audio (Coming Soon)', href: '/audio', icon: Wand2, locked: true },
+  { name: 'Post-Processing', href: '/post-process', icon: Layers, locked: true },
+];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [credits, setCredits] = useState(0);
+  
   const [user, setUser] = useState<any>(null);
+  const [credits, setCredits] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  
-  const pathname = usePathname();
+  const [authError, setAuthError] = useState('');
+  const [session, setSession] = useState<any>(null);
 
-  const refreshCredits = async () => {
-    if (user?.id) {
-      await fetchProfile(user.id);
-    } else {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      }
-    }
-  };
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const res = await fetch("/api/user/profile", { cache: "no-store", 
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.credits !== undefined) {
-          setCredits(data.credits);
-        }
-      }
-    } catch (err) {}
-  };
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      }
+      setSession(session);
+      setUser(session?.user || null);
+      if (session?.user) fetchCredits(session.user.id);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setCredits(0);
-      }
+      setSession(session);
+      setUser(session?.user || null);
+      if (session?.user) fetchCredits(session.user.id);
+      else setCredits(0);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  const fetchCredits = async (userId: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      try {
+        const res = await fetch('/api/user/profile', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.credits !== undefined) {
+            setCredits(data.credits);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching credits:", err);
+      }
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
     setAuthError('');
-    try {
-      if (authMode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setAuthMode('login');
-        setAuthError('Check your email for the confirmation link.');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        setShowAuthModal(false);
-      }
-    } catch (err: any) {
-      setAuthError(err.message);
-    } finally {
-      setAuthLoading(false);
+    let res;
+    if (authMode === 'login') {
+      res = await supabase.auth.signInWithPassword({ email, password });
+    } else {
+      res = await supabase.auth.signUp({ email, password });
     }
-  }
-
-  const navItems = [
-    { name: 'Workspace (Img2Vid)', href: '/', icon: Video, locked: false },
-    { name: 'Post-Processing', href: '/post-process', icon: Layers, locked: false },
-    { name: 'My Generations', href: '/generations', icon: Film, locked: false },
-    { name: 'Image Generation', href: '/image', icon: ImageIcon, locked: false },
-    { name: 'Audio / Voice', href: '/audio', icon: Mic, locked: false },
-  ];
+    setAuthLoading(false);
+    if (res.error) setAuthError(res.error.message);
+    else setShowAuthModal(false);
+  };
 
   return (
-    <AppContext.Provider value={{credits, setCredits, refreshCredits, session: { user }}}>
-    <div className="flex h-screen w-full bg-[#09090b] text-zinc-300 font-sans selection:bg-indigo-500/30 overflow-hidden">
-      {/* Mobile Header Overlay */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#09090b] border-b border-zinc-800 flex items-center justify-between px-4 z-50">
-        <span className="font-semibold text-white flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-white flex items-center justify-center">
-             <div className="w-3 h-3 bg-black rounded-sm" />
-          </div>
-          ForgeFrame
-        </span>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-zinc-400 hover:text-white">
-          <Menu size={20} />
+    <AppContext.Provider value={{ user, session, credits, fetchCredits, refreshCredits: () => user?.id && fetchCredits(user.id) }}>
+    <div className="flex h-screen overflow-hidden bg-[#09090b] text-white">
+      {/* Mobile Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#09090b] border-b border-zinc-800 flex items-center justify-between px-4 z-40">
+        <span className="font-bold text-white text-lg tracking-tight">ForgeFrame</span>
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </div>
 
       {/* Sidebar */}
       <aside 
         className={`
-          fixed md:static inset-y-0 left-0 z-40
-          transition-all duration-300 ease-in-out
-          bg-[#09090b] border-r border-zinc-800 flex flex-col
+          fixed md:relative z-40 h-full bg-[#09090b] border-r border-zinc-800 flex flex-col transition-all duration-300 ease-in-out
           ${isSidebarOpen ? 'w-64' : 'w-20'}
           ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
           pt-14 md:pt-0
@@ -143,14 +110,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="h-14 flex items-center justify-between px-6 border-b border-zinc-800 hidden md:flex">
           {isSidebarOpen ? (
             <span className="font-bold text-white text-lg tracking-tight flex items-center gap-2 overflow-hidden whitespace-nowrap">
-              <div className="w-8 h-8 shrink-0 rounded bg-white flex items-center justify-center">
-                 <div className="w-4 h-4 bg-black rounded-sm" />
+              <div className="w-8 h-8 shrink-0 rounded bg-white flex items-center justify-center"> 
+                <div className="w-4 h-4 bg-black rounded-sm" />
               </div>
               <span className="truncate">ForgeFrame</span>
             </span>
           ) : (
-            <div className="w-8 h-8 rounded mx-auto bg-white flex items-center justify-center">
-               <div className="w-4 h-4 bg-black rounded-sm" />
+            <div className="w-8 h-8 rounded mx-auto bg-white flex items-center justify-center"> 
+              <div className="w-4 h-4 bg-black rounded-sm" />
             </div>
           )}
         </div>
@@ -213,6 +180,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 pt-14 md:pt-0 h-full relative bg-[#000000]">
+        
         {/* Header */}
         <header className="h-14 shrink-0 bg-[#09090b] border-b border-zinc-800 flex items-center justify-between px-6 z-30">
           <div className="flex items-center gap-2 text-sm text-zinc-400 hidden sm:flex">
@@ -221,10 +189,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="text-zinc-200">
               {pathname === '/' ? 'Image to Video' : 
                pathname === '/post-process' ? 'Post-Processing' : 
-               pathname === '/generations' ? 'My Generations' :
-               pathname.replace('/', '')}
+               pathname === '/generations' ? 'My Generations' : 
+               (pathname || '').replace('/', '')}
             </span>
           </div>
+
           <div className="flex items-center gap-4 ml-auto">
             {user ? (
               <>
@@ -272,7 +241,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <h2 className="text-xl font-bold text-white mb-6">
               {authMode === 'login' ? 'Login' : 'Create Account'}
             </h2>
+            
             {authError && <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-3 rounded mb-4">{authError}</div>}
+            
             <form onSubmit={handleAuth} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1">Email</label>
@@ -302,6 +273,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {authLoading ? 'Loading...' : (authMode === 'login' ? 'Sign In' : 'Sign Up')}
               </button>
             </form>
+            
             <div className="mt-4 text-center">
               <button 
                 onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
@@ -310,6 +282,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {authMode === 'login' ? "Don't have an account? Sign up" : "Already have an account? Log in"}
               </button>
             </div>
+            
             <button 
               onClick={() => setShowAuthModal(false)}
               className="absolute top-4 right-4 text-zinc-500 hover:text-white"

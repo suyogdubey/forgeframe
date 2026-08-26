@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     const parts = response.candidates?.[0]?.content?.parts || [];
     for (const part of parts) {
       if (part.inlineData) {
-        b64 = part.inlineData.data;
+        b64 = part.inlineData.data || '';
         break;
       }
     }

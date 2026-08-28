@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useContext, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Sparkles, Settings2, Loader2, RefreshCw, Play, Square, Download } from 'lucide-react';
-import { AppContext } from '@/components/AppLayout';
+import { AppContext } from "@/components/AppContext";
 
 export default function AudioGenerationPage() {
-  const { credits, refreshCredits, session } = useContext(AppContext);
+  const { credits, refreshCredits, session } = React.useContext(AppContext);
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState('gemini-voice');
   const [voice, setVoice] = useState('Aoede');
@@ -25,6 +25,11 @@ export default function AudioGenerationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, type: 'audio voiceover' })
       });
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
+        window.location.reload();
+        return;
+      }
       const data = await res.json();
       if (data.enhancedPrompt) setPrompt(data.enhancedPrompt);
     } catch (err) {}
@@ -43,6 +48,11 @@ export default function AudioGenerationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: session.user, prompt, voice })
       });
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
+        window.location.reload();
+        return;
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate audio');
       

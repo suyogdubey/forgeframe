@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 'use client';
 
-import React, { useState, useEffect, useContext } from 'react';
-import { AppContext } from '@/components/AppLayout';
+import React, { useState, useEffect } from 'react';
+import { AppContext } from "@/components/AppContext";
 import { Users, Search, ShieldAlert, Edit2, Check, X, CreditCard, Activity, Loader2, Trash2 } from 'lucide-react';
 
 interface UserProfile {
@@ -14,7 +14,7 @@ interface UserProfile {
 
 export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const { user, fetchCredits } = useContext(AppContext);
+  const { user, fetchCredits } = React.useContext(AppContext);
   const [search, setSearch] = useState('');
   const [editingCreditsId, setEditingCreditsId] = useState<string | null>(null);
   const [editCreditsValue, setEditCreditsValue] = useState<string>('');
@@ -27,6 +27,11 @@ export default function AdminPage() {
   const fetchUsers = async () => {
     try {
       const res = await fetch("/api/admin/users");
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
+        window.location.reload();
+        return;
+      }
       const data = await res.json();
       if (res.ok) setUsers(data);
     } catch (err) {}
@@ -77,6 +82,11 @@ export default function AdminPage() {
     setCleanupResult(null);
     try {
       const res = await fetch('/api/admin/cleanup', { method: 'POST' });
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
+        window.location.reload();
+        return;
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Cleanup failed');
       setCleanupResult({ success: true, message: `Successfully deleted ${data.deletedCount} files.` });

@@ -1,4 +1,5 @@
-'use client';
+"use client";
+import { AppContext } from "@/components/AppContext";
 import React, { useState, useEffect, createContext } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -10,7 +11,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock'
 );
 
-export const AppContext = createContext<any>(null);
+
 
 const navItems = [
   { name: 'Image to Video', href: '/', icon: Video },
@@ -51,7 +52,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchCredits = async (userId: string) => {
+    async function fetchCredits(userId: string) {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       try {
@@ -60,14 +61,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             'Authorization': `Bearer ${session.access_token}`
           }
         });
-        if (res.ok) {
+        const contentType = res.headers.get("content-type");
+        if (res.ok && contentType && contentType.includes("application/json")) {
           const data = await res.json();
           if (data && data.credits !== undefined) {
             setCredits(data.credits);
           }
+        } else if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
+          window.location.reload();
+          return;
         }
-      } catch (err) {
-        console.error("Error fetching credits:", err);
+      } catch (err: any) {
+        if (err?.message === "Failed to fetch" || String(err).includes("Failed to fetch")) {
+          console.warn("Fetch credits failed (likely due to page reload)");
+        } else {
+          console.error("Error fetching credits:", err);
+        }
       }
     }
   };

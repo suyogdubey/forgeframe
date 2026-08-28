@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useRef, useContext, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Layers, Subtitles, Download, Info , UploadCloud, Sparkles, Loader2, Play, Pause, SplitSquareHorizontal, X, FolderOpen } from 'lucide-react';
-import { AppContext } from '@/components/AppLayout';
+import { AppContext } from "@/components/AppContext";
 import { createClient } from '@supabase/supabase-js';
 
 export default function PostProcessPage() {
-  const { credits, refreshCredits, session } = useContext(AppContext);
+  const { credits, refreshCredits, session } = React.useContext(AppContext);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedVideo, setUploadedVideo] = useState<string | null>(null);
   const [upscale, setUpscale] = useState('2x');
@@ -25,8 +25,8 @@ export default function PostProcessPage() {
   const enhancedVideoRef = useRef<HTMLVideoElement>(null);
 
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mock.supabase.co',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'mock'
   );
 
   const fetchGenerations = async () => {
@@ -88,7 +88,12 @@ const handleTranscribe = async () => {
       body: JSON.stringify({ user: session.user, videoUrl: finalUrl })
     });
     
-    const data = await res.json();
+    const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
+        window.location.reload();
+        return;
+      }
+      const data = await res.json();
     if (!res.ok) throw new Error(data.error);
 
     setSrtData(data.srt);

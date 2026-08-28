@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { ImageIcon, Sparkles, Settings2, Loader2, RefreshCw } from 'lucide-react';
-import { AppContext } from "@/components/AppContext";
+import { AppContext } from '@/components/AppLayout';
 
 export default function ImageGenerationPage() {
   const { credits, refreshCredits, session } = React.useContext(AppContext);
@@ -23,11 +23,6 @@ export default function ImageGenerationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, type: 'image' })
       });
-      const contentType = res.headers.get("content-type");
-      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
-        window.location.reload();
-        return;
-      }
       const data = await res.json();
       if (data.enhancedPrompt) setPrompt(data.enhancedPrompt);
     } catch (err) {}
@@ -46,11 +41,6 @@ export default function ImageGenerationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: session.user, prompt, aspectRatio })
       });
-      const contentType = res.headers.get("content-type");
-      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
-        window.location.reload();
-        return;
-      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate image');
       
@@ -139,7 +129,6 @@ export default function ImageGenerationPage() {
                 <p className="font-medium animate-pulse">Synthesizing image...</p>
               </div>
             ) : imageUrl ? (
-              
               <img src={imageUrl} alt="Generated" className="object-contain max-h-full max-w-full" />
             ) : (
               <div className="text-center text-zinc-500 flex flex-col items-center">

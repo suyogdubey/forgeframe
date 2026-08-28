@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Layers, Subtitles, Download, Info , UploadCloud, Sparkles, Loader2, Play, Pause, SplitSquareHorizontal, X, FolderOpen } from 'lucide-react';
-import { AppContext } from "@/components/AppContext";
+import { AppContext } from '@/components/AppLayout';
 import { createClient } from '@supabase/supabase-js';
 
 export default function PostProcessPage() {
@@ -88,12 +88,7 @@ const handleTranscribe = async () => {
       body: JSON.stringify({ user: session.user, videoUrl: finalUrl })
     });
     
-    const contentType = res.headers.get("content-type");
-      if (contentType && contentType.includes("text/html") && res.url.includes("__cookie_check")) {
-        window.location.reload();
-        return;
-      }
-      const data = await res.json();
+    const data = await res.json();
     if (!res.ok) throw new Error(data.error);
 
     setSrtData(data.srt);

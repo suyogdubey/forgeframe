@@ -57,15 +57,18 @@ export default function WorkspacePage() {
   
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
+  const [engine, setEngine] = useState('wan');
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState(5);
   const [fps, setFps] = useState(16);
   const [steps, setSteps] = useState(25);
   const [cfg, setCfg] = useState(7.0);
-  const [width, setWidth] = useState(1024);
-  const [height, setHeight] = useState(1024);
+  const [aspectRatio, setAspectRatio] = useState('16:9');
+  const [quality, setQuality] = useState('720p');
   const [seed, setSeed] = useState(-1);
 
   const [jobStatus, setJobStatus] = useState<'idle' | 'generating' | 'done' | 'error'>('idle');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -95,6 +98,21 @@ export default function WorkspacePage() {
     }
   }, [logs]);
 
+  const enhancePrompt = async () => {
+    if (!prompt.trim()) return;
+    setIsEnhancing(true);
+    try {
+      const res = await fetch('/api/enhance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, type: 'video' })
+      });
+      const data = await res.json();
+      if (data.enhancedPrompt) setPrompt(data.enhancedPrompt);
+    } catch (err) {}
+    setIsEnhancing(false);
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -121,10 +139,26 @@ export default function WorkspacePage() {
     }
     
     setJobStatus('generating');
+    setIsSubmitting(true);
     setVideoUrl(null);
     setLogs([]);
     addLog('Initiating video generation...');
     startTimer();
+
+    const getDimensions = (ar: string, q: string) => {
+      const qMap: Record<string, number> = { '480p': 480, '720p': 720, '1080p': 1080 };
+      const base = qMap[q] || 720;
+      switch (ar) {
+        case '16:9': return { width: Math.round((base * 16 / 9) / 16) * 16, height: base };
+        case '9:16': return { width: base, height: Math.round((base * 16 / 9) / 16) * 16 };
+        case '1:1': return { width: base, height: base };
+        case '4:3': return { width: Math.round((base * 4 / 3) / 16) * 16, height: base };
+        case '3:4': return { width: base, height: Math.round((base * 4 / 3) / 16) * 16 };
+        case '21:9': return { width: Math.round((base * 21 / 9) / 16) * 16, height: base };
+        default: return { width: 1280, height: 720 };
+      }
+    };
+    const { width, height } = getDimensions(aspectRatio, quality);
 
     try {
       const res = await fetch('/api/generate', {
@@ -134,6 +168,7 @@ export default function WorkspacePage() {
           ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
         },
         body: JSON.stringify({ 
+          engine,
           image_base64: imageBase64,
           prompt,
           negative_prompt: negativePrompt,
@@ -147,6 +182,8 @@ export default function WorkspacePage() {
         })
       });
 
+      setIsSubmitting(false);
+
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         if (res.status === 429) {
@@ -159,7 +196,7 @@ export default function WorkspacePage() {
       
       if (data.status === 'queued') {
         const timestamp = data.timestamp;
-        addLog(`Job submitted! Generation in progress on Modal backend...`);
+        addLog(`Job submitted and queued successfully! You can submit another video while this generates.`);
         let attempts = 0;
         const maxAttempts = 60; // 5 minutes max wait
         
@@ -180,7 +217,7 @@ export default function WorkspacePage() {
             .order('created_at', { ascending: false })
             .limit(1);
             
-          if (gens && gens.length > 0 && gens[0].video_url) {
+          if (gens && gens.length > 0 && gens[0].video_url && gens[0].video_url !== 'pending') {
             setVideoUrl(gens[0].video_url);
             setJobStatus('done');
             addLog(`Generation completed successfully!`);
@@ -200,6 +237,7 @@ export default function WorkspacePage() {
       }
     } catch (err: any) {
       console.error(err);
+      setIsSubmitting(false);
       addLog(`Error: ${err.message}`);
       setJobStatus('error');
       stopTimer();
@@ -278,11 +316,41 @@ export default function WorkspacePage() {
 
             {/* Text Prompts */}
             <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Engine Selector</label>
+                <div className="flex gap-2">
+                  <select 
+                    value={engine}
+                    onChange={(e) => setEngine(e.target.value)}
+                    className="flex-1 bg-zinc-950 border border-zinc-800 text-sm text-zinc-200 rounded-lg pl-3 pr-8 py-2.5 appearance-none focus:outline-none focus:border-indigo-500 transition-colors"
+                  >
+                    <option value="wan">Wan 2.2 (5B Fast)</option>
+                    <option value="ltx">LTX Video (Cinematic Action)</option>
+                  </select>
+                  <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg px-3 min-w-[80px] justify-center">
+                    <span className="text-xs font-semibold text-indigo-400">
+                      {engine === 'ltx' ? '10 Credits' : '5 Credits'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1">
-                <label className="text-sm font-medium text-zinc-300 flex justify-between">
-                  <span>Prompt</span>
-                  <span className="text-xs text-zinc-500 font-normal">Required</span>
-                </label>
+                <div className="flex justify-between items-end">
+                  <label className="text-sm font-medium text-zinc-300 flex justify-between">
+                    <span>Prompt</span>
+                    <span className="text-xs text-zinc-500 font-normal ml-2">Required</span>
+                  </label>
+                  <button 
+                    onClick={enhancePrompt} 
+                    disabled={isEnhancing || !prompt.trim()}
+                    className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors"
+                    title="Enhance prompt with Gemini"
+                  >
+                    {isEnhancing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    Enhance
+                  </button>
+                </div>
                 <textarea 
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
@@ -303,6 +371,48 @@ export default function WorkspacePage() {
               </div>
             </div>
 
+            {/* Dimensions and Quality */}
+            <div className="pt-4 border-t border-zinc-800 space-y-4">
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-zinc-300">Aspect Ratio</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: '16:9', desc: 'Landscape', icon: <div className="w-5 h-3 border-2 border-current rounded-sm" /> },
+                    { label: '9:16', desc: 'Portrait', icon: <div className="w-3 h-5 border-2 border-current rounded-sm" /> },
+                    { label: '1:1', desc: 'Square', icon: <div className="w-4 h-4 border-2 border-current rounded-sm" /> },
+                    { label: '4:3', desc: 'Classic', icon: <div className="w-[18px] h-[14px] border-2 border-current rounded-sm" /> },
+                    { label: '3:4', desc: 'Vertical', icon: <div className="w-[14px] h-[18px] border-2 border-current rounded-sm" /> },
+                    { label: '21:9', desc: 'Cinematic', icon: <div className="w-6 h-[10px] border-2 border-current rounded-sm" /> }
+                  ].map((ar) => (
+                    <button
+                      key={ar.label}
+                      onClick={() => setAspectRatio(ar.label)}
+                      className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl border transition-all ${aspectRatio === ar.label ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'}`}
+                    >
+                      <div className="h-6 flex items-center justify-center">{ar.icon}</div>
+                      <div className="text-xs font-semibold">{ar.label}</div>
+                      <div className="text-[10px] opacity-70">{ar.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-zinc-300">Quality</label>
+                <div className="flex gap-2">
+                  {['480p', '720p', '1080p'].map(q => (
+                    <button
+                      key={q}
+                      onClick={() => setQuality(q)}
+                      className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-all ${quality === q ? 'bg-indigo-500 text-white border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'}`}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Advanced Settings */}
             <div className="pt-4 border-t border-zinc-800 space-y-4">
               <div className="flex items-center justify-between">
@@ -314,7 +424,7 @@ export default function WorkspacePage() {
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-zinc-400">Duration</label>
                     <div className="flex bg-zinc-950 border border-zinc-800 rounded-lg p-1">
-                      {[5, 10].map(s => (
+                      {[5, 8, 10].map(s => (
                         <button
                           key={s}
                           onClick={() => setDurationSeconds(s)}
@@ -384,23 +494,23 @@ export default function WorkspacePage() {
           {/* Generate Button */}
           <button 
             onClick={handleGenerate}
-            disabled={jobStatus === 'generating'}
+            disabled={isSubmitting}
             className={`
               w-full py-3.5 rounded-lg font-semibold flex items-center justify-center gap-2 text-sm mt-1 transition-all
-              ${jobStatus === 'generating'
+              ${isSubmitting
                 ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' 
                 : 'bg-white text-black hover:bg-zinc-200 shadow-[0_0_20px_rgba(255,255,255,0.1)]'}
             `}
           >
-            {jobStatus === 'generating' ? (
+            {isSubmitting ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                Generating...
+                Submitting...
               </>
             ) : (
               <>
                 <Sparkles size={16} />
-                Generate Video <span className="opacity-50 font-normal ml-1">(5 Credits)</span>
+                Generate Video <span className="opacity-50 font-normal ml-1">({engine === 'ltx' ? 10 : 5} Credits)</span>
               </>
             )}
           </button>
@@ -416,7 +526,7 @@ export default function WorkspacePage() {
           <div className="absolute top-4 left-4 flex gap-2 z-20">
             <span className="bg-zinc-950/80 backdrop-blur-md border border-zinc-800 px-2 py-1 rounded text-[10px] text-zinc-400 flex items-center gap-1 shadow-sm">
               <div className={`w-1.5 h-1.5 rounded-full ${jobStatus === 'generating' ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
-              Wan 2.2 5B Engine
+              {engine === 'ltx' ? 'ForgeFrame LTX Engine' : 'ForgeFrame Wan Engine'}
             </span>
           </div>
           

@@ -9,9 +9,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const token = authHeader.replace('Bearer ', '');
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://oaqtglfngpvekyxhwyzx.supabase.co';
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_95EPkKJt9ieo1p1GGfnxxw_ZatypR-a';
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_95EPkKJt9ieo1p1GGfnxxw_ZatypR-a';
     
     // Create a user client to verify token and fetch user details
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const prompt = body.prompt || '';
+    const engine = body.engine || 'wan';
+    const creditsCost = engine === 'ltx' ? 10 : 5;
     
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('user_profiles')
@@ -38,15 +40,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
     
-    if (profile.credits < 5) {
-      return NextResponse.json({ error: 'Insufficient credits. Need 5.' }, { status: 402 });
+    if (profile.credits < creditsCost) {
+      return NextResponse.json({ error: `Insufficient credits. Need ${creditsCost}.` }, { status: 402 });
     }
 
-    // Deduct credits early
-    await supabaseAdmin.from('user_profiles').update({ credits: profile.credits - 5 }).eq('id', user.id);
-
-    const backendUrl = process.env.MODAL_BACKEND_URL;
+    const targetBackendUrl = engine === 'ltx' 
+      ? (process.env.MODAL_LTX_URL || 'https://suyogdubey10--ltx-video-backend-api-generate.modal.run')
+      : process.env.MODAL_BACKEND_URL;
     const requestStartTime = new Date().toISOString();
+
+    // Insert pending generation row to track it immediately
+    let generationId = null;
+    const { data: pendingGen } = await supabaseAdmin.from('generations').insert({
+      user_id: user.id,
+      prompt: prompt,
+      video_url: 'pending'
+    }).select('id').single();
+    
+    if (pendingGen) {
+      generationId = pendingGen.id;
+    }
 
     // Background process
     const processGeneration = async () => {
@@ -54,23 +67,47 @@ export async function POST(req: NextRequest) {
         let videoBuffer: ArrayBuffer;
         let contentType = 'video/mp4';
 
-        if (!backendUrl) {
-          console.log("No MODAL_BACKEND_URL found. Simulating job delay...");
-          await new Promise(resolve => setTimeout(resolve, 3000));
+        if (!targetBackendUrl) {
+          console.log(`No backend URL found for engine ${engine}. Simulating job delay...`);
+          await new Promise(resolve => setTimeout(resolve, 15000));
           const mockVideo = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
           const videoRes = await fetch(mockVideo);
           videoBuffer = await videoRes.arrayBuffer();
         } else {
-          const response = await fetch(backendUrl, {
+          const payload = engine === 'ltx'
+            ? { 
+                image_base64: body.image_base64, 
+                prompt: body.prompt, 
+                steps: body.steps || 20, 
+                cfg: body.cfg || 3.5, 
+                seed: body.seed ?? -1,
+                user_id: user.id
+              }
+            : { 
+                image_base64: body.image_base64, 
+                prompt: body.prompt, 
+                negative_prompt: body.negative_prompt, 
+                steps: body.steps, 
+                cfg: body.cfg, 
+                duration_seconds: body.duration_seconds, 
+                fps: body.fps, 
+                width: body.width, 
+                height: body.height, 
+                seed: body.seed,
+                user_id: user.id
+              };
+
+          const response = await fetch(targetBackendUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...body, user_id: user.id })
+            body: JSON.stringify(payload)
           });
           
           if (!response.ok) {
             console.error(`Modal backend error: ${response.status}`);
-            // Refund credits if generation failed at Modal side
-            await supabaseAdmin.from('user_profiles').update({ credits: profile.credits }).eq('id', user.id);
+            if (generationId) {
+              await supabaseAdmin.from('generations').delete().eq('id', generationId);
+            }
             return;
           }
           
@@ -79,11 +116,11 @@ export async function POST(req: NextRequest) {
             const data = await response.json();
             if (data.video_url || data.videoUrl) {
               const url = data.video_url || data.videoUrl;
-              await supabaseAdmin.from('generations').insert({
-                user_id: user.id,
-                prompt: prompt,
-                video_url: url
-              });
+              if (generationId) {
+                await supabaseAdmin.from('generations').update({ video_url: url }).eq('id', generationId);
+              }
+              // Deduct credits
+              await supabaseAdmin.from('user_profiles').update({ credits: profile.credits - creditsCost }).eq('id', user.id);
               return;
             }
           }
@@ -107,16 +144,17 @@ export async function POST(req: NextRequest) {
         const { data: publicUrlData } = supabaseAdmin.storage.from('videos').getPublicUrl(fileName);
         videoUrl = publicUrlData.publicUrl;
         
-        await supabaseAdmin.from('generations').insert({
-          user_id: user.id,
-          prompt: prompt,
-          video_url: videoUrl
-        });
-
+        if (generationId) {
+          await supabaseAdmin.from('generations').update({ video_url: videoUrl }).eq('id', generationId);
+        }
+        
+        // Deduct credits after successful generation and upload
+        await supabaseAdmin.from('user_profiles').update({ credits: profile.credits - creditsCost }).eq('id', user.id);
       } catch (err) {
         console.error("Background generation error:", err);
-        // Attempt to refund on failure
-        await supabaseAdmin.from('user_profiles').update({ credits: profile.credits }).eq('id', user.id);
+        if (generationId) {
+          await supabaseAdmin.from('generations').delete().eq('id', generationId);
+        }
       }
     };
 
